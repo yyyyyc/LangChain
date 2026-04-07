@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(git -C \"c:\\\\Python\\\\Langchain_2026\" ls-files --others --exclude-standard Ex1/)",
+      "Bash(git -C \"c:\\\\Python\\\\Langchain_2026\" log --oneline -5)"
+    ]
+  }
+}
