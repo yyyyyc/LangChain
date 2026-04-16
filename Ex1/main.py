@@ -18,9 +18,18 @@ from agent import build_agent
 def main():
     load_dotenv()
 
-    if not os.getenv("OPENAI_API_KEY"):
-        print("ERROR: OPENAI_API_KEY is not set. Please edit .env and add your key.")
-        return
+    provider = os.getenv("LLM_PROVIDER", "openai").lower()
+    if provider == "azure":
+        if not os.getenv("AZURE_OPENAI_API_KEY"):
+            print("ERROR: AZURE_OPENAI_API_KEY is not set. Please edit .env and add your key.")
+            return
+        if not os.getenv("AZURE_OPENAI_ENDPOINT"):
+            print("ERROR: AZURE_OPENAI_ENDPOINT is not set. Please edit .env and add your endpoint.")
+            return
+    else:
+        if not os.getenv("OPENAI_API_KEY"):
+            print("ERROR: OPENAI_API_KEY is not set. Please edit .env and add your key.")
+            return
 
     print("=" * 60)
     print("  Company HR Chatbot")

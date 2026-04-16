@@ -8,19 +8,20 @@ import os
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.tools import Tool
 
 
-def get_salary_tool(llm: ChatOpenAI) -> Tool:
+def get_salary_tool(llm, embeddings) -> Tool:
     """
     Build and return a LangChain Tool for salary lookups from the PDF.
 
     Parameters
     ----------
-    llm : ChatOpenAI
+    llm :
         The language model instance used by the RetrievalQA chain.
+    embeddings :
+        The embeddings model used to build/load the FAISS index.
 
     Returns
     -------
@@ -32,10 +33,6 @@ def get_salary_tool(llm: ChatOpenAI) -> Tool:
     pdf_path = os.path.join(base_dir, os.getenv("PDF_PATH", "Resources/company_salaries.pdf"))
     if not os.path.exists(pdf_path):
         raise FileNotFoundError(f"PDF not found at: {pdf_path}")
-
-    import httpx
-    http_client = httpx.Client(verify=False)
-    embeddings = OpenAIEmbeddings(http_client=http_client)
     index_dir = os.path.join(os.path.dirname(pdf_path), "faiss_index")
 
     if os.path.exists(index_dir):

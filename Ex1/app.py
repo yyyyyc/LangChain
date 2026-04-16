@@ -77,8 +77,13 @@ def ask():
     if not question:
         return jsonify({"error": "No question provided."}), 400
 
-    if not os.getenv("OPENAI_API_KEY"):
-        return jsonify({"error": "OPENAI_API_KEY is not set in .env"}), 500
+    provider = os.getenv("LLM_PROVIDER", "openai").lower()
+    if provider == "azure":
+        if not os.getenv("AZURE_OPENAI_API_KEY") or not os.getenv("AZURE_OPENAI_ENDPOINT"):
+            return jsonify({"error": "AZURE_OPENAI_API_KEY or AZURE_OPENAI_ENDPOINT is not set in .env"}), 500
+    else:
+        if not os.getenv("OPENAI_API_KEY"):
+            return jsonify({"error": "OPENAI_API_KEY is not set in .env"}), 500
 
     q: queue.Queue = queue.Queue()
     handler = _SSEHandler(q)
@@ -94,7 +99,10 @@ def ask():
             ]
             q.put({"type": "answer", "data": result.get("output", ""), "memory": memory_log})
         except Exception as e:
-            q.put({"type": "error", "data": str(e)})
+            import traceback
+            print(f"[agent error] {type(e).__name__}: {e}")
+            traceback.print_exc()
+            q.put({"type": "error", "data": f"{type(e).__name__}: {e}"})
         finally:
             q.put(None)  # sentinel → close stream
 
@@ -113,6 +121,23 @@ def ask():
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.route("/provider", methods=["GET"])
+def get_provider():
+    return jsonify({"provider": os.getenv("LLM_PROVIDER", "openai")})
+
+
+@app.route("/provider", methods=["POST"])
+def set_provider():
+    global _agent_executor
+    data = request.get_json(force=True)
+    provider = (data.get("provider") or "").lower()
+    if provider not in ("openai", "azure"):
+        return jsonify({"error": "Invalid provider. Use 'openai' or 'azure'."}), 400
+    os.environ["LLM_PROVIDER"] = provider
+    _agent_executor = None  # force rebuild with new provider on next request
+    return jsonify({"success": True, "provider": provider})
 
 
 @app.route("/delete-embeddings", methods=["POST"])

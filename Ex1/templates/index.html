@@ -54,6 +54,30 @@
       border-radius: 4px;
     }
 
+    .provider-select-wrap {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .provider-label {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    #provider-select {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text);
+      font-size: 0.8rem;
+      padding: 0.25rem 0.55rem;
+      cursor: pointer;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #provider-select:hover  { border-color: var(--accent); }
+    #provider-select:focus  { border-color: var(--accent); }
+
     main {
       flex: 1;
       max-width: 1400px;
@@ -310,6 +334,13 @@
   <header>
     <h1>Company HR Chatbot</h1>
     <span class="badge">LangChain · GPT-4o · SQL + PDF</span>
+    <div class="provider-select-wrap">
+      <span class="provider-label">LLM Provider:</span>
+      <select id="provider-select">
+        <option value="openai">OpenAI</option>
+        <option value="azure">Azure OpenAI</option>
+      </select>
+    </div>
   </header>
 
   <main>
@@ -528,6 +559,42 @@
         liveDot.classList.remove('active');
       }
     }
+
+    // ── Provider selector ──────────────────────────────────────────────────
+
+    const providerSelect = document.getElementById('provider-select');
+
+    async function loadProvider() {
+      try {
+        const res  = await fetch('/provider');
+        const data = await res.json();
+        providerSelect.value = data.provider || 'openai';
+      } catch (_) {}
+    }
+
+    providerSelect.addEventListener('change', async () => {
+      const provider = providerSelect.value;
+      setStatus(`Switching to ${provider === 'azure' ? 'Azure OpenAI' : 'OpenAI'}…`);
+      try {
+        const res  = await fetch('/provider', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          setStatus(`Provider set to ${provider === 'azure' ? 'Azure OpenAI' : 'OpenAI'}. Agent will reinitialize on next query.`);
+        } else {
+          setStatus(data.error || 'Failed to switch provider.', true);
+          await loadProvider();  // revert selector to actual value
+        }
+      } catch (err) {
+        setStatus('Failed: ' + err.message, true);
+        await loadProvider();
+      }
+    });
+
+    loadProvider();
 
     askBtn.addEventListener('click', submitQuestion);
     questionEl.addEventListener('keydown', e => {
