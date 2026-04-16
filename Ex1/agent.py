@@ -6,7 +6,8 @@ PDF salary tool under a single AgentExecutor with conversation memory.
 
 from langchain_openai import ChatOpenAI
 from langchain.agents import AgentExecutor, create_react_agent
-from langchain.memory import ConversationBufferMemory
+from langchain_core.chat_history import InMemoryChatMessageHistory
+from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain import hub
 
 from db_tool import get_db_tools
@@ -29,6 +30,9 @@ When a question requires both (e.g. "salary of the oldest worker under Maya Levi
   Step 2: Use SalaryLookup to get their salary.
 
 Always think step by step. When writing SQL queries:
+  - The database is **Microsoft SQL Server** — use T-SQL syntax only.
+  - Use TOP N (e.g. SELECT TOP 1 ...), never LIMIT.
+  - Use GETDATE() for the current date/time, not NOW().
   - Table names: Workers, Hierarchy, Departments, Cities (schema: dbo)
   - Join Workers to Departments on department_id
   - Join Workers to Cities on city_id
@@ -40,13 +44,34 @@ name only — no markdown, no backticks, no code fences. Just plain text.
 """
 
 
-def build_agent() -> AgentExecutor:
+class AgentWrapper:
     """
-    Build and return the AgentExecutor with all tools and memory.
+    Thin wrapper around RunnableWithMessageHistory that keeps a
+    compatible .invoke() interface and exposes conversation messages.
+    """
+
+    def __init__(self, runnable: RunnableWithMessageHistory, get_history):
+        self._runnable = runnable
+        self._get_history = get_history
+
+    def invoke(self, inputs: dict, callbacks: list | None = None) -> dict:
+        config: dict = {"configurable": {"session_id": "default"}}
+        if callbacks:
+            config["callbacks"] = callbacks
+        return self._runnable.invoke(inputs, config=config)
+
+    @property
+    def memory_messages(self) -> list:
+        return self._get_history("default").messages
+
+
+def build_agent() -> AgentWrapper:
+    """
+    Build and return an AgentWrapper with all tools and per-session memory.
 
     Returns
     -------
-    AgentExecutor
+    AgentWrapper
         The assembled agent ready to accept questions.
     """
     llm = ChatOpenAI(model="gpt-4o", temperature=0)
@@ -56,13 +81,8 @@ def build_agent() -> AgentExecutor:
     salary_tool = get_salary_tool(llm)
     all_tools = sql_tools + [salary_tool]
 
-    # Pull standard ReAct prompt from LangChain hub and append our context
+    # Pull standard ReAct prompt from LangChain hub
     base_prompt = hub.pull("hwchase17/react-chat")
-
-    memory = ConversationBufferMemory(
-        memory_key="chat_history",
-        return_messages=True,
-    )
 
     agent = create_react_agent(
         llm=llm,
@@ -73,10 +93,24 @@ def build_agent() -> AgentExecutor:
     agent_executor = AgentExecutor(
         agent=agent,
         tools=all_tools,
-        memory=memory,
         verbose=True,
         handle_parsing_errors=True,
         max_iterations=30,
     )
 
-    return agent_executor
+    # Per-call session store — each build_agent() call starts fresh
+    session_store: dict[str, InMemoryChatMessageHistory] = {}
+
+    def get_session_history(session_id: str) -> InMemoryChatMessageHistory:
+        if session_id not in session_store:
+            session_store[session_id] = InMemoryChatMessageHistory()
+        return session_store[session_id]
+
+    agent_with_history = RunnableWithMessageHistory(
+        agent_executor,
+        get_session_history,
+        input_messages_key="input",
+        history_messages_key="chat_history",
+    )
+
+    return AgentWrapper(agent_with_history, get_session_history)

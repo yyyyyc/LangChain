@@ -10,8 +10,8 @@ from agent import build_agent
 
 
 def main():
-    # Load environment variables from .env
     load_dotenv()
+    os.environ.setdefault("LANGSMITH_TRACING", "false")  # silence warning when key is absent
 
     if not os.getenv("OPENAI_API_KEY"):
         print("ERROR: OPENAI_API_KEY is not set. Please edit .env and add your key.")

@@ -13,19 +13,74 @@ from langchain.tools import Tool
 
 
 def _strip_markdown(text: str) -> str:
-    """Remove markdown code fences and stray quotes that the LLM wraps SQL/table names in."""
+    """Remove markdown code fences and wrapping quotes that the LLM adds around SQL/table names."""
     text = re.sub(r"```(?:sql)?", "", text, flags=re.IGNORECASE)
     text = text.replace("`", "").strip()
-    # Strip any leading/trailing quotes (paired or unpaired — the ReAct parser
-    # sometimes strips the opening quote before we see the string, leaving only a trailing one)
-    text = text.strip("\"'").strip()
+
+    # Case 1: matched pair of surrounding quotes — strip both.
+    # e.g. "SELECT ..." or 'Workers'
+    if (text.startswith('"') and text.endswith('"')) or \
+       (text.startswith("'") and text.endswith("'")):
+        text = text[1:-1].strip()
+    # Case 2: the ReAct parser already stripped the opening quote before we see the
+    # string, leaving only a stray trailing double-quote (e.g. "SELECT ... Levi'").
+    # Strip it. We only do this for " (not '), because a query can legitimately end
+    # with a single-quote string literal like WHERE name = 'Smith'.
+    elif text.endswith('"'):
+        text = text[:-1].strip()
+
+    # Trailing semicolons are not needed for single-statement pyodbc execution and
+    # interact badly with stray quotes — remove them.
+    text = text.rstrip(';').strip()
+
     return text
 
 
+def _to_sql_server(sql: str) -> str:
+    """
+    Rewrite common MySQL/PostgreSQL constructs to SQL Server T-SQL so that
+    the agent's queries work even when the LLM emits non-SQL-Server syntax.
+
+    Transformations applied:
+      LIMIT n               → TOP n  (injected after SELECT / SELECT DISTINCT)
+      LIMIT n OFFSET m      → OFFSET m ROWS FETCH NEXT n ROWS ONLY
+      ILIKE 'x'             → LIKE 'x'  (SQL Server LIKE is already case-insensitive)
+    """
+    sql = sql.strip()
+
+    # LIMIT n OFFSET m  →  OFFSET m ROWS FETCH NEXT n ROWS ONLY
+    # Must be checked before the plain LIMIT case.
+    limit_offset = re.search(
+        r'\bLIMIT\s+(\d+)\s+OFFSET\s+(\d+)\s*$', sql, re.IGNORECASE
+    )
+    if limit_offset:
+        n, m = limit_offset.group(1), limit_offset.group(2)
+        sql = sql[:limit_offset.start()].rstrip()
+        sql = f"{sql} OFFSET {m} ROWS FETCH NEXT {n} ROWS ONLY"
+    else:
+        # Plain LIMIT n  →  TOP n  (inject after SELECT or SELECT DISTINCT)
+        limit_simple = re.search(r'\bLIMIT\s+(\d+)\s*$', sql, re.IGNORECASE)
+        if limit_simple:
+            n = limit_simple.group(1)
+            sql = sql[:limit_simple.start()].rstrip()
+            sql = re.sub(
+                r'\bSELECT(\s+DISTINCT\b)?',
+                lambda m: f"SELECT{m.group(1) or ''} TOP {n}",
+                sql, count=1, flags=re.IGNORECASE,
+            )
+
+    # ILIKE → LIKE  (SQL Server LIKE is case-insensitive by default)
+    sql = re.sub(r'\bILIKE\b', 'LIKE', sql, flags=re.IGNORECASE)
+
+    return sql
+
+
 def _wrap_tool(tool):
-    """Return a new Tool that strips markdown from the input before calling the original."""
+    """Return a new Tool that strips markdown and normalises SQL Server syntax before calling the original."""
     def clean_func(query: str):
-        return tool.run(_strip_markdown(query))
+        query = _strip_markdown(query)
+        query = _to_sql_server(query)
+        return tool.run(query)
 
     return Tool(
         name=tool.name,
