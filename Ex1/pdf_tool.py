@@ -33,7 +33,9 @@ def get_salary_tool(llm: ChatOpenAI) -> Tool:
     if not os.path.exists(pdf_path):
         raise FileNotFoundError(f"PDF not found at: {pdf_path}")
 
-    embeddings = OpenAIEmbeddings()
+    import httpx
+    http_client = httpx.Client(verify=False)
+    embeddings = OpenAIEmbeddings(http_client=http_client)
     index_dir = os.path.join(os.path.dirname(pdf_path), "faiss_index")
 
     if os.path.exists(index_dir):

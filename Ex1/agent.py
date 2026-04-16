@@ -74,7 +74,13 @@ def build_agent() -> AgentWrapper:
     AgentWrapper
         The assembled agent ready to accept questions.
     """
-    llm = ChatOpenAI(model="gpt-4o", temperature=0)
+    import httpx
+    http_client = httpx.Client(verify=False)
+    llm = ChatOpenAI(
+        model="gpt-4o",
+        temperature=0,
+        http_client=http_client,
+    )
 
     # Gather tools from both sources
     sql_tools = get_db_tools(llm)
