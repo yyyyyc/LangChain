@@ -8,7 +8,7 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain import hub
+from langchain.prompts import PromptTemplate
 
 from db_tool import get_db_tools
 from pdf_tool import get_salary_tool
@@ -81,8 +81,32 @@ def build_agent() -> AgentWrapper:
     salary_tool = get_salary_tool(llm)
     all_tools = sql_tools + [salary_tool]
 
-    # Pull standard ReAct prompt from LangChain hub
-    base_prompt = hub.pull("hwchase17/react-chat")
+    # Local ReAct-chat prompt (equivalent to hwchase17/react-chat)
+    base_prompt = PromptTemplate.from_template(
+        SYSTEM_PROMPT_SUFFIX + """\n
+Assistant can ask the user to use tools to look up information that may be helpful in answering the users original question. The tools the human can use are:
+
+{tools}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+
+Begin!
+
+Previous conversation history:
+{chat_history}
+
+New input: {input}
+{agent_scratchpad}"""
+    )
 
     agent = create_react_agent(
         llm=llm,

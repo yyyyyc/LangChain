@@ -28,7 +28,8 @@ def get_salary_tool(llm: ChatOpenAI) -> Tool:
         A named tool the agent can invoke with a worker's name (or question)
         to retrieve salary information from the PDF.
     """
-    pdf_path = os.getenv("PDF_PATH", "Resources/company_salaries.pdf")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    pdf_path = os.path.join(base_dir, os.getenv("PDF_PATH", "Resources/company_salaries.pdf"))
     if not os.path.exists(pdf_path):
         raise FileNotFoundError(f"PDF not found at: {pdf_path}")
 
