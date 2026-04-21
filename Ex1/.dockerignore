@@ -1,0 +1,9 @@
+.env
+.env.example
+.claude/
+.git/
+__pycache__/
+*.pyc
+PLAN.md
+resources/DB.sql
+resources/Hierarchy.png
