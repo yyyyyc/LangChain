@@ -8,6 +8,7 @@ venv/
 
 # Environment variables
 Ex1/.env
+*/.env
 
 # VS Code
 .vscode/
